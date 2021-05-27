@@ -1,15 +1,16 @@
 package fs;
 
+import fs.exceptions.*;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 import static org.mockito.Mockito.*;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class HighLevelFileSystemTest {
 
@@ -25,14 +26,14 @@ class HighLevelFileSystemTest {
   @Test
   void sePuedeAbrirUnArchivo() {
     when(lowLevelFileSystem.openFile("unArchivo.txt")).thenReturn(42);
-    File file = fileSystem.open("unArchivo.txt");
+    File file = fileSystem.openFile("unArchivo.txt");
     Assertions.assertEquals(file.getDescriptor(), 42);
   }
 
   @Test
   void siLaAperturaFallaUnaExcepcionEsLanzada() {
     when(lowLevelFileSystem.openFile("otroArchivo.txt")).thenReturn(-1);
-    Assertions.assertThrows(CanNotOpenFileException.class, () -> fileSystem.open("otroArchivo.txt"));
+    Assertions.assertThrows(CanNotOpenFileException.class, () -> fileSystem.openFile("otroArchivo.txt"));
   }
 
   @Test
@@ -42,8 +43,8 @@ class HighLevelFileSystemTest {
     when(lowLevelFileSystem.openFile("ejemplo.txt")).thenReturn(42);
     when(lowLevelFileSystem.syncReadFile(42, buffer.getBytes(), 0, 100)).thenReturn(0);
 
-    File file = fileSystem.open("ejemplo.txt");
-    file.read(buffer);
+    File file = fileSystem.openFile("ejemplo.txt");
+    file.syncReadFile(buffer);
 
     Assertions.assertEquals(0, buffer.getStart());
     Assertions.assertEquals(-1, buffer.getEnd());
@@ -60,13 +61,13 @@ class HighLevelFileSystemTest {
       return 4;
     });
 
-    File file = fileSystem.open("ejemplo.txt");
-    file.read(buffer);
+    File file = fileSystem.openFile("ejemplo.txt");
+    file.syncReadFile(buffer);
 
     Assertions.assertEquals(0, buffer.getStart());
     Assertions.assertEquals(3, buffer.getEnd());
     Assertions.assertEquals(4, buffer.getCurrentSize());
-    Assertions.assertArrayEquals(buffer.getBytes(), new byte[] {3, 3, 3, 3, 0, 0, 0, 0, 0, 0});
+    Assertions.assertArrayEquals(buffer.getBytes(), new byte[]{3, 3, 3, 3, 0, 0, 0, 0, 0, 0});
   }
 
   @Test
@@ -76,51 +77,104 @@ class HighLevelFileSystemTest {
     when(lowLevelFileSystem.openFile("archivoMalito.txt")).thenReturn(13);
     when(lowLevelFileSystem.syncReadFile(anyInt(), any(), anyInt(), anyInt())).thenReturn(-1);
 
-    File file = fileSystem.open("archivoMalito.txt");
+    File file = fileSystem.openFile("archivoMalito.txt");
 
-    Assertions.assertThrows(CanNotReadFileException.class, () -> file.read(buffer));
+    Assertions.assertThrows(CanNotReadFileException.class, () -> file.syncReadFile(buffer));
   }
 
   @Test
-  void sePuedeEscribirSincronicamenteUnArchivoCuandoHayNoHayNadaParaEscribir() {
-    Assertions.fail("Completar");
+  void sePuedeEscribirSincronicamenteUnArchivoCuandoNoHayNadaParaEscribir() {
+    Buffer buffer = new Buffer(0);
+
+    when(lowLevelFileSystem.openFile("escribir.txt")).thenReturn(68);
+
+    File file = fileSystem.openFile("escribir.txt");
+    file.syncWriteFile(buffer);
+    verify(lowLevelFileSystem, atMostOnce()).syncWriteFile(anyInt(), any(), anyInt(), anyInt());
   }
 
   @Test
   void sePuedeEscribirSincronicamenteUnArchivoCuandoHayAlgoParaEscribir() {
-    Assertions.fail("Completar");
+    Buffer buffer = new Buffer(25);
+
+    when(lowLevelFileSystem.openFile("escribirAlgo.txt")).thenReturn(2);
+
+    File file = fileSystem.openFile("escribirAlgo.txt");
+    file.syncWriteFile(buffer);
+
+    verify(lowLevelFileSystem, atMostOnce()).syncWriteFile(anyInt(), any(), anyInt(), anyInt());
   }
 
   @Test
   void sePuedeLeerAsincronicamenteUnArchivo() {
-    Assertions.fail("Completar");
+    Buffer buffer = new Buffer(25);
+
+    when(lowLevelFileSystem.openFile("leerAlgoAsinc.txt")).thenReturn(10);
+
+    File file = fileSystem.openFile("leerAlgoAsinc.txt");
+    file.asyncReadFile(buffer, Mockito.mock(Consumer.class));
+
+    verify(lowLevelFileSystem, times(1)).asyncReadFile(
+        anyInt(), any(), anyInt(), anyInt(), any(Consumer.class));
   }
 
   @Test
   void sePuedeEscribirAsincronicamenteUnArchivo() {
-    Assertions.fail("Completar");
+    Buffer buffer = new Buffer(25);
+
+    when(lowLevelFileSystem.openFile("escribirAlgoAsinc.txt")).thenReturn(90);
+
+    File file = fileSystem.openFile("escribirAlgoAsinc.txt");
+    file.asyncWriteFile(buffer, Mockito.mock(Runnable.class));
+
+    verify(lowLevelFileSystem, times(1)).asyncWriteFile(
+        anyInt(), any(), anyInt(), anyInt(), any(Runnable.class));
   }
 
   @Test
   void sePuedeCerrarUnArchivo() {
-    Assertions.fail("Completar");
+    when(lowLevelFileSystem.openFile("unArchivo.txt")).thenReturn(42);
+    File file = fileSystem.openFile("unArchivo.txt");
+    file.closeFile();
+    verify(lowLevelFileSystem, Mockito.atMostOnce()).closeFile(anyInt());
   }
 
   @Test
-  @Disabled("Punto Bonus")
+  void noSePuedeCerrarUnArchivoConFDInvalidoODosVeces() {
+    when(lowLevelFileSystem.openFile("archivoACerrar.txt")).thenReturn(40);
+    File closedFile = fileSystem.openFile("archivoACerrar.txt");
+    closedFile.closeFile();
+    Assertions.assertThrows(CanNotCloseFileException.class, closedFile::closeFile);
+  }
+
+  @Test
   void sePuedeSaberSiUnPathEsUnArchivoRegular() {
-    Assertions.fail("Completar: te va a convenir extraer una nueva abstracción para diferenciar a los paths de los archivos");
+    when(lowLevelFileSystem.exists("/etc/server.c")).thenReturn(true);
+    when(lowLevelFileSystem.isDirectory("/etc/server.c")).thenReturn(false);
+    when(lowLevelFileSystem.isRegularFile("/etc/server.c")).thenReturn(true);
+    Path path = fileSystem.getPath("/etc/server.c");
+    Assertions.assertEquals(path.getType(), PathType.REGULAR_FILE);
   }
 
   @Test
-  @Disabled("Punto Bonus")
   void sePuedeSaberSiUnPathEsUnDirectorio() {
-    Assertions.fail("Completar: te va a convenir extraer una nueva abstracción para diferenciar a los paths de los archivos");
+    when(lowLevelFileSystem.exists("/etc/")).thenReturn(true);
+    when(lowLevelFileSystem.isDirectory("/etc/")).thenReturn(true);
+    when(lowLevelFileSystem.isRegularFile("/etc/")).thenReturn(false);
+    Path path = fileSystem.getPath("/etc/");
+    Assertions.assertEquals(path.getType(), PathType.DIRECTORY);
   }
 
   @Test
-  @Disabled("Punto Bonus")
   void sePuedeSaberSiUnPathExiste() {
-    Assertions.fail("Completar: te va a convenir extraer una nueva abstracción para diferenciar a los paths de los archivos");
+    when(lowLevelFileSystem.exists("/bin/nk2.0/make/")).thenReturn(true);
+    Assertions.assertTrue(fileSystem.exists("/bin/nk2.0/make/"));
+  }
+
+  @Test
+  void sePuedeObtenerElPathSolicitado() {
+    when(lowLevelFileSystem.exists("/bin/nk2.0/make/")).thenReturn(true);
+    Path path = fileSystem.getPath("/bin/nk2.0/make/");
+    Assertions.assertEquals(path.getPath(), "/bin/nk2.0/make/");
   }
 }
