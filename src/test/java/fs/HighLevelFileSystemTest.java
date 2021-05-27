@@ -71,6 +71,39 @@ class HighLevelFileSystemTest {
   }
 
   @Test
+  void leerTresCamposDeUnArchivoYEscriboEsosCamposMasUnBloqueEnOtro() {
+    Buffer buffer = new Buffer(10);
+
+    when(lowLevelFileSystem.openFile("ejemplo.txt")).thenReturn(42);
+    when(lowLevelFileSystem.syncReadFile(42, buffer.getBytes(), 0, 4)).thenAnswer(invocation -> {
+      Arrays.fill(buffer.getBytes(), 0, 4, (byte) 0);
+      return 4;
+    });
+    when(lowLevelFileSystem.syncReadFile(42, buffer.getBytes(), 4, 5)).thenAnswer(invocation -> {
+      Arrays.fill(buffer.getBytes(), 4, 5, (byte) 1);
+      return 1;
+    });
+    when(lowLevelFileSystem.syncReadFile(42, buffer.getBytes(), 5, 10)).thenAnswer(invocation -> {
+      Arrays.fill(buffer.getBytes(), 5, 10, (byte) 2);
+      return 4;
+    });
+
+    File file = fileSystem.openFile("ejemplo.txt");
+    file.syncReadFileWithSize(buffer,0,4);
+    file.syncReadFileWithSize(buffer,4,5);
+    file.syncReadFileWithSize(buffer,5,10);
+    File fileToWrite = fileSystem.openFile("aEscribir.txt");
+    file.syncWriteFileBlock(buffer,0,4);
+
+    Buffer threeBytesBuffer = new Buffer(3);
+    file.syncWriteFileBlock(threeBytesBuffer,0,3);
+    file.syncWriteFileBlock(buffer,4,5);
+    file.syncWriteFileBlock(buffer,5,10);
+
+    verify(lowLevelFileSystem,times(4)).syncWriteFile(anyInt(),any(),anyInt(),anyInt());
+  }
+
+  @Test
   void siLaLecturaSincronicaFallaUnaExcepciónEsLanzada() {
     Buffer buffer = new Buffer(10);
 
@@ -83,7 +116,7 @@ class HighLevelFileSystemTest {
   }
 
   @Test
-  void sePuedeEscribirSincronicamenteUnArchivoCuandoNoHayNadaParaEscribir() {
+  void sePuedeEscribirSincronicamenteUnArchivoCuandoNoHayNadaParaEscribir() { //el buffer se vacía? queda igual?
     Buffer buffer = new Buffer(0);
 
     when(lowLevelFileSystem.openFile("escribir.txt")).thenReturn(68);
@@ -103,6 +136,26 @@ class HighLevelFileSystemTest {
     file.syncWriteFile(buffer);
 
     verify(lowLevelFileSystem, atMostOnce()).syncWriteFile(anyInt(), any(), anyInt(), anyInt());
+  }
+
+  @Test
+  void sePuedeLeerUnArchivoYEscribirloEnBloquesEnOtro() {
+    Buffer buffer = new Buffer(10);
+
+    when(lowLevelFileSystem.openFile("ejemplo.txt")).thenReturn(42);
+    when(lowLevelFileSystem.syncReadFile(42, buffer.getBytes(), 0, 9)).thenAnswer(invocation -> {
+      Arrays.fill(buffer.getBytes(), 0, 4, (byte) 3);
+      Arrays.fill(buffer.getBytes(),4,6,(byte) 5);
+      Arrays.fill(buffer.getBytes(),6,10,(byte) 8);
+      return 10;
+    });
+
+    File file = fileSystem.openFile("ejemplo.txt");
+    file.syncReadFile(buffer);
+
+    File fileToWrite = fileSystem.openFile("migracion.txt");
+    file.syncWriteFileBufferInBlocks(buffer,5);
+    verify(lowLevelFileSystem,times(2)).syncWriteFile(anyInt(),any(), anyInt(),anyInt());
   }
 
   @Test
@@ -145,6 +198,18 @@ class HighLevelFileSystemTest {
     File closedFile = fileSystem.openFile("archivoACerrar.txt");
     closedFile.closeFile();
     Assertions.assertThrows(CanNotCloseFileException.class, closedFile::closeFile);
+  }
+
+  @Test
+  void noSePuedeEscribirEnBloquesMasGrandeQueElBuffer() {
+    Buffer buffer = new Buffer(10);
+    File file = fileSystem.openFile("pass.txt");
+    try {
+      file.syncWriteFileBufferInBlocks(buffer, 15);
+    }
+    catch (BlockSizeCantBeGreaterThanBufferException exception) {
+      Assertions.assertEquals(exception.getClass(),BlockSizeCantBeGreaterThanBufferException.class);
+    }
   }
 
   @Test
